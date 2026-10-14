@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIリーダー PBLアプリ v2</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <section id="setup" class="screen">
+    <h1>プロジェクトを始める</h1>
+    <p class="note">本名・学校名・連絡先は入力しないでください。ニックネームを使いましょう。</p>
+    <label>テーマ<input id="in-theme" placeholder="例: 地域の商店街を元気にする企画"></label>
+    <label>期間<input id="in-period" placeholder="例: 2週間"></label>
+    <label>成果物の形<input id="in-deliverable" placeholder="例: 発表スライド5枚"></label>
+    <label>メンバー(ニックネームをカンマ区切りで)<input id="in-members" placeholder="例: ゆう, ひな, そうた"></label>
+    <div class="row">
+      <button id="btn-start">始める</button>
+      <label class="filebtn">保存ファイルを読み込む<input type="file" id="file-load-setup" accept=".json" hidden></label>
+    </div>
+  </section>
+
+  <section id="main" class="screen" hidden>
+    <header>
+      <strong id="title"></strong>
+      <label>発言者 <select id="speaker"></select></label>
+      <span class="spacer"></span>
+      <button id="btn-save">書き出す</button>
+      <label class="filebtn">読み込む<input type="file" id="file-load" accept=".json" hidden></label>
+      <button id="btn-reset" class="ghost">最初から</button>
+    </header>
+
+    <div class="cols">
+      <div id="chat-col">
+        <div class="pane" id="chat-pane">
+          <h2>会話</h2>
+          <div id="log"></div>
+          <form id="msg-form">
+            <textarea id="msg-input" rows="3" placeholder="調べたこと、アイデアなどを入力"></textarea>
+            <button>送信</button>
+          </form>
+        </div>
+      </div>
+      <div class="pane" id="board-pane">
+        <h2>記憶ボード</h2>
+        <div id="board"></div>
+      </div>
+    </div>
+
+    <div class="pane" id="ai-pane">
+      <h2>リーダーAIとやりとり</h2>
+      <p class="note"><b>① </b>提出文を作る(自動でコピー) → <b>② </b>AIのチャットに貼る → <b>③ </b>AIの返事を右に貼って取り込む</p>
+      <div class="aigrid">
+        <div>
+          <button id="btn-prompt">① 提出文を作る</button>
+          <textarea id="prompt-out" class="big" placeholder="ここに提出文が出ます" readonly></textarea>
+        </div>
+        <div>
+          <button id="btn-import">③ 返事を取り込む</button>
+          <textarea id="reply-in" class="big" placeholder="AIの返事をここに貼る"></textarea>
+        </div>
+      </div>
+    </div>
+    <p class="note">AIの提案は「案」です。最終判断はメンバーで行いましょう。</p>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

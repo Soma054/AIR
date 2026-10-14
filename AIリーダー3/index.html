@@ -18,12 +18,16 @@
       <div><label for="code">ルームコード（6桁）</label><input id="code" inputmode="numeric" maxlength="6" autocomplete="off">
       </div>
       <div><label for="nick">ニックネーム</label><input id="nick" autocomplete="off"
-          onkeydown="if(event.key==='Enter')join('student')"></div>
+          onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)join('student')"></div>
       <button class="btn" onclick="join('student')"><i data-lucide="log-in"></i>入室する</button>
       <hr style="border:0;border-top:1px solid var(--dv);width:100%;margin:4px 0">
       <h2>先生として開始</h2>
       <div><label for="pname">プロジェクト名</label><input id="pname" placeholder="例: 地域の防災マップ"></div>
       <button class="btn sec" onclick="join('teacher')"><i data-lucide="plus"></i>ルームを作成する</button>
+      <hr style="border:0;border-top:1px solid var(--dv);width:100%;margin:4px 0">
+      <h2>アイコン（任意）</h2>
+      <div class="col" id="lav"></div>
+      <p style="color:var(--mu);margin:0">入室ボタンを押す前に選んでください。入室後も、右上の名前のボタンから変更できます。</p>
       <p id="lerr" role="alert" style="color:var(--err);font-weight:700;min-height:1.7em"></p>
     </div>
   </main>
@@ -32,8 +36,8 @@
     <header>
       <h1 id="hName"></h1><span class="pill" id="hCode"></span><span class="pill"><i data-lucide="sparkles"></i>AI残り
         <span id="hAi"></span><span class="meter"><i id="hBar"></i></span></span>
-      <span style="flex:1"></span><span class="pill" id="hMe"></span><button class="btn sec sm" onclick="leave()"><i
-          data-lucide="log-out"></i>退室</button>
+      <span style="flex:1"></span><button class="btn sec sm" id="hMe" onclick="openProfile()"></button><button
+        class="btn danger sm" onclick="leave()"><i data-lucide="log-out"></i>退室</button>
     </header>
     <nav id="nav" aria-label="画面の切り替え"></nav>
     <div class="main">
@@ -43,6 +47,9 @@
       </aside>
     </div>
   </div>
+  <dialog id="dlg" aria-labelledby="dt">
+    <div id="dc"></div>
+  </dialog>
   <div id="toast" role="status"></div>
   <script src="app.js"></script>
 </body>

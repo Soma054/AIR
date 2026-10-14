@@ -27,7 +27,7 @@ const S = {
   sug: null,
   sugHandled: 0,
   aiCount: 0,
-  reply: null,
+  th: null,
   tt: null,
 };
 const NG = ["死ね", "バカ", "殺す"],
@@ -37,9 +37,32 @@ const esc = (s) =>
     /[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
   );
+const rc = (id) => S.msgs.filter((y) => y.p === id).length,
+  msgById = (id) => S.msgs.find((x) => x.id === id);
+const url = (u) => {
+  u = u.trim();
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try {
+    const x = new URL(u);
+    return /^https?:$/.test(x.protocol) ? x.href : "#";
+  } catch {
+    return "#";
+  }
+};
 const ic = (n) => `<i data-lucide="${n}"></i>`,
   mob = () => innerWidth <= 760;
-const icons = () => window.lucide && lucide.createIcons();
+const icons = () => {
+  if (!window.lucide) return;
+  lucide.createIcons();
+  const bad = document.querySelectorAll("i[data-lucide]");
+  if (bad.length) {
+    bad.forEach((e) => {
+      console.warn("Lucide: 見つからないアイコン名", e.dataset.lucide);
+      e.setAttribute("data-lucide", "circle-help");
+    });
+    lucide.createIcons();
+  }
+};
 function hint() {
   $("code").placeholder = "現在のコード: " + S.room.code;
 }
@@ -83,16 +106,25 @@ function join(role) {
     }
   }
   S.me = { n, role };
+  if (S.lav) S.av[n] = S.lav;
+  if (role === "student" && !S.users.includes(n)) S.users.push(n);
   S.tab = "chat";
   $("login").style.display = "none";
   $("app").style.display = "flex";
   render();
 }
-function leave() {
+function doLeave() {
+  dlgClose();
   S.me = null;
+  S.th = null;
   $("app").style.display = "none";
   $("login").style.display = "block";
   hint();
+}
+function leave() {
+  dlgShow(
+    `<h2 id="dt" style="text-align:center">本当に退出しますか？</h2><div class="row" style="justify-content:center;margin-top:16px"><button class="btn sec" onclick="dlgClose()">いいえ</button><button class="btn danger" onclick="doLeave()">はい</button></div>`
+  );
 }
 function setTab(t) {
   S.tab = t;
@@ -108,13 +140,15 @@ function render() {
   const left = S.room.limit - S.room.used;
   $("hAi").textContent = left + "/" + S.room.limit;
   $("hBar").style.width = (left / S.room.limit) * 100 + "%";
-  $("hMe").textContent = S.me.role === "teacher" ? "先生" : S.me.n;
+  $("hMe").innerHTML =
+    av(S.me.n) + esc(S.me.role === "teacher" ? "先生" : S.me.n);
+  $("hMe").setAttribute("aria-label", "アイコンを設定（" + S.me.n + "）");
   const tabs = [
     ["chat", "議論チャット", "messages-square"],
     ["risk", "リスク・不明点", "triangle-alert"],
     ["src", "調査・ソース", "search"],
   ];
-  if (mob()) tabs.push(["todo", "ToDo", "list-checks"]);
+  if (mob()) tabs.push(["todo", "スレッド・やること", "list-checks"]);
   if (S.me.role === "teacher")
     tabs.push(["dash", "教員用", "layout-dashboard"]);
   $("nav").innerHTML = tabs
@@ -142,14 +176,21 @@ function render() {
   if (keep && $("mi")) $("mi").value = keep;
   $("side").innerHTML = mob() ? "" : todoPanel();
   icons();
+  const tl = document.querySelector(".tl");
+  if (tl) tl.scrollTop = tl.scrollHeight;
 }
 function todoPanel() {
-  return `<h2>ToDo</h2>${
+  if (S.th && msgById(S.th)) return threadPanel();
+  return `<div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1;margin:0">やることリスト</h2><button class="btn sm" onclick="openTaskDialog()">${ic(
+    "plus"
+  )}タスク追加</button></div>${
     S.todos
+      .map((x, i) => ({ x, i }))
+      .sort((p, q) => p.x.c - q.x.c)
       .map(
-        (x, i) =>
-          `<div class="todo ${
-            x.c ? "done" : ""
+        ({ x, i }) =>
+          `<div class="todo ${x.c ? "done" : ""} ${
+            S.hl === x ? "hl" : ""
           }"><input type="checkbox" aria-label="完了にする: ${esc(x.t)}" ${
             x.c ? "checked" : ""
           } onchange="tog(${i})"><div style="flex:1"><span class="t">${esc(
@@ -164,48 +205,25 @@ function todoPanel() {
             "trash-2"
           )}</button></div>`
       )
-      .join("") || '<p class="empty">ToDoはまだありません。</p>'
-  }
-<div class="row"><div style="flex:1 1 100%"><label for="tt">タスク名</label><input id="tt" onkeydown="if(event.key==='Enter')addTodo()"></div><div><label for="ta">担当</label><input id="ta"></div><div><label for="td">期限</label><input id="td" type="date"></div><button class="btn" onclick="addTodo()">${ic(
-    "plus"
-  )}追加</button></div>`;
+      .join("") ||
+    '<p class="empty">やることはまだありません。「タスク追加」から作れます。</p>'
+  }`;
 }
 function chat() {
   const m = S.msgs
-    .map(
-      (x) =>
-        `<div class="card msg ${x.u === S.me.n ? "me" : ""} ${
-          x.p ? "reply" : ""
-        } ${x.b ? "blocked" : ""} ${x.ai ? "ai" : ""}"><small>${
-          x.ai ? ic("sparkles") : ""
-        }${esc(x.u)}</small>${
-          x.b
-            ? ic("ban") + "不適切な表現が含まれるため送信できませんでした"
-            : esc(x.t)
-        }${
-          x.b || x.ai
-            ? ""
-            : `<button class="tb" onclick="S.reply=${
-                x.id
-              };render();$('mi').focus()">${ic("reply")}返信</button>`
-        }</div>`
-    )
+    .filter((x) => !x.p)
+    .map((x) => msgRow(x, S.th === x.id, true))
     .join("");
   const sg = S.sug
-    ? `<div class="card sug"><h2>${ic("list-plus")}ToDoの提案</h2><p>${esc(
+    ? `<div class="card sug"><h2>${ic("list-plus")}やることの提案</h2><p>${esc(
         S.sug
       )}</p><div class="row"><button class="btn sm" onclick="acc()">${ic(
         "check"
       )}追加する</button><button class="btn sec sm" onclick="S.sug=null;S.sugHandled++;render()">見送る</button></div></div>`
     : "";
   const left = S.room.limit - S.room.used;
-  return `<div class="scroll" role="log" aria-label="議論">${m}${sg}</div>${
-    S.reply
-      ? `<p style="color:var(--mu)">返信先を選択中 <button class="tb" onclick="S.reply=null;render()">取り消す</button></p>`
-      : ""
-  }
- <div class="compose"><div><label for="mi" class="sr">メッセージまたはAIへの質問</label><input id="mi" placeholder="メッセージ、またはAIへの質問" onkeydown="if(event.key==='Enter')send()"></div>
- <button class="btn sec" onclick="send()">${ic(
+  return `<div class="scroll" role="log" aria-label="議論">${m}${sg}</div>
+ <div class="compose"><div><label for="mi" class="sr">メッセージまたはAIへの質問</label><input id="mi" placeholder="メッセージ、またはAIへの質問" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)send()"></div><button class="btn sec" onclick="send()">${ic(
    "send"
  )}送信</button><button class="btn" ${
     S.busy || left < 1 ? "disabled" : ""
@@ -224,10 +242,8 @@ function send() {
     id: Date.now(),
     u: S.me.n,
     t: v,
-    p: S.reply,
     b: NG.some((w) => v.includes(w)),
   });
-  S.reply = null;
   $("mi").value = "";
   render();
 }
@@ -294,34 +310,55 @@ function riskTab() {
     S.risks
       .map(
         (r, i) =>
-          `<div class="card"><span class="tag ${r.c}">${ic(CL[r.c][0])}${
+          `<div class="card ${
+            r.st === "todo" ? "rk-todo" : r.st === "done" ? "rk-done" : ""
+          }"><span class="tag ${r.c}">${ic(CL[r.c][0])}${
             CL[r.c][1]
           }</span> <b>${esc(r.t)}</b>${
+            r.st === "todo"
+              ? ` <button class="go" onclick="goTodo(${i})">やることリストへ移動${ic(
+                  "arrow-right"
+                )}</button>`
+              : r.st === "done"
+              ? ` <span class="tag okc">${ic("check")}対処済み</span>`
+              : ""
+          }${
             r.st !== "open"
-              ? ` <span class="tag okc">${ic("check")}${
-                  r.st === "todo" ? "ToDo化済み" : "対処済み"
-                }</span>`
+              ? ` <button class="tb" onclick="S.risks[${i}].st='open';render()">未対応に戻す</button>`
               : ""
           }<p>${esc(r.d)}</p>${
             r.st === "open"
               ? `<div class="row"><button class="btn sm" onclick="riskTodo(${i})">${ic(
                   "list-plus"
-                )}ToDoにする</button><button class="btn sec sm" onclick="S.risks[${i}].st='done';render()">${ic(
+                )}やることリストに入れる</button><button class="btn sec sm" onclick="S.risks[${i}].st='done';render()">${ic(
                   "check"
                 )}対処済みにする</button></div>`
               : ""
           }</div>`
       )
       .join("") ||
-    '<p class="empty">まだありません。チャットで「AIに意見を求める」を押すと、リスクや不明点がここに届きます。</p>'
+    '<div class="empty ctr"><span class="em" aria-hidden="true"><i data-lucide="smile"></i></span><b>おどろくほど平和ですね。でも、見落としは本当にゼロ？</b><span class="sub">チャットで「AIに意見を求める」を押すと、気づいていないリスクや「？」がここに届きます。</span></div>'
   }</div>`;
+}
+function goTodo(i) {
+  const r = S.risks[i];
+  S.th = null;
+  S.hl = r.todo;
+  if (mob()) S.tab = "todo";
+  render();
+  setTimeout(() => {
+    S.hl = null;
+    render();
+  }, 2500);
 }
 function riskTodo(i) {
   const r = S.risks[i];
-  S.todos.push({ t: "確認: " + r.t, a: "", d: "", c: false, ai: 1 });
+  const o = { t: "確認: " + r.t, a: "", d: "", c: false, ai: 1 };
+  S.todos.push(o);
+  r.todo = o;
   r.st = "todo";
   render();
-  toast("ToDoに追加しました");
+  toast("やることリストに追加しました");
 }
 function srcTab() {
   return `<div class="scroll">${S.sources
@@ -329,7 +366,11 @@ function srcTab() {
       (s) =>
         `<div class="card"><span class="tag okc">${ic("link")}${esc(
           s.by
-        )}</span> <b>${esc(s.t)}</b><br><small style="color:var(--mu)">${esc(
+        )}</span> <a class="lk" href="${esc(
+          url(s.u)
+        )}" target="_blank" rel="noopener noreferrer"><b>${esc(s.t)}</b>${ic(
+          "external-link"
+        )}<span class="sr">（新しいタブで開きます）</span></a><br><small style="color:var(--mu)">${esc(
           s.u
         )}</small><p>${esc(s.s)}</p></div>`
     )
@@ -343,6 +384,10 @@ function addSrc() {
     u = $("su").value.trim();
   if (!t || !u) {
     toast("タイトルとURLを入力してください");
+    return;
+  }
+  if (url(u) === "#") {
+    toast("URLの形式が正しくありません");
     return;
   }
   S.sources.push({ t, u, s: $("ss").value.trim(), by: S.me.n });
@@ -366,7 +411,7 @@ function dash() {
     .map(
       (r) =>
         `<tr><td>${esc(r.t)}</td><td>${
-          { open: "未対応", todo: "ToDo化", done: "対処済み" }[r.st]
+          { open: "未対応", todo: "やることリスト入り", done: "対処済み" }[r.st]
         }</td></tr>`
     )
     .join("");
@@ -376,17 +421,17 @@ function dash() {
     .join("");
   return `<div class="scroll"><div class="card"><h2>班の状況（事実ログ）</h2><p>最終アクティブ ${new Date().toLocaleTimeString(
     "ja-JP"
-  )} / AI利用 ${S.aiCount}回 / ToDo提案への対応 ${S.sugHandled}件 / 未読 ${
+  )} / AI利用 ${S.aiCount}回 / やること提案への対応 ${S.sugHandled}件 / 未読 ${
     S.unread
   }件</p></div>
-<div class="card"><h2>個人別の貢献ログ</h2><div class="tw"><table><tr><th>名前</th><th>発言</th><th>ToDo</th><th>URL提出</th></tr>${rows}</table></div></div>
-<div class="card"><h2>AI提示リスクへの対処</h2><div class="tw"><table>${
-    rk || "<tr><td>まだありません</td></tr>"
-  }</table></div></div>
-<div class="card"><h2>未解決課題（未完了のToDo）</h2><ul>${
-    open || "<li>なし</li>"
-  }</ul></div>
-<p style="color:var(--mu)">AIは評価や採点をせず、事実のみを表示します。</p></div>`;
+ <div class="card"><h2>個人別の貢献ログ</h2><div class="tw"><table><tr><th>名前</th><th>発言</th><th>やること</th><th>URL提出</th></tr>${rows}</table></div></div>
+ <div class="card"><h2>AI提示リスクへの対処</h2><div class="tw"><table>${
+   rk || "<tr><td>まだありません</td></tr>"
+ }</table></div></div>
+ <div class="card"><h2>未解決課題（未完了のやること）</h2><ul>${
+   open || "<li>なし</li>"
+ }</ul></div>
+ <p style="color:var(--mu)">AIは評価や採点をせず、事実のみを表示します。</p></div>`;
 }
 function tog(i) {
   S.todos[i].c = !S.todos[i].c;
@@ -399,9 +444,322 @@ function edit(i) {
     render();
   }
 }
+
+function openThread(id) {
+  S.th = id;
+  S.anim = true;
+  if (mob()) S.tab = "todo";
+  render();
+  S.anim = false;
+  setTimeout(() => $("ri") && $("ri").focus(), 0);
+}
+function sendReply() {
+  const v = $("ri").value.trim();
+  if (!v || !S.th) return;
+  S.msgs.push({
+    id: Date.now(),
+    u: S.me.n,
+    t: v,
+    p: S.th,
+    b: NG.some((w) => v.includes(w)),
+  });
+  render();
+  $("ri") && $("ri").focus();
+}
+function threadPanel() {
+  const p = msgById(S.th),
+    rs = S.msgs.filter((x) => x.p === p.id);
+  return `<div class="thread ${
+    S.anim ? "anim" : ""
+  }"><div style="display:flex;align-items:center"><h2 style="flex:1;margin:0">${ic(
+    "messages-square"
+  )}スレッド</h2><button class="tb" aria-label="スレッドを閉じる" onclick="S.th=null;render()">${ic(
+    "x"
+  )}</button></div>
+ <div style="margin-top:8px">${msgRow(p, true, false)}</div>
+ <p style="color:var(--mu);margin:8px 0">${rs.length}件の返信</p>
+ <div class="tl" role="log" aria-label="返信">${rs
+   .map((x) => msgRow(x, false, false))
+   .join("")}</div>
+ <label for="ri" style="margin-top:8px">${esc(
+   p.u
+ )} さんのメッセージに返信</label><input id="ri" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)sendReply()"><button class="btn" style="margin-top:8px" onclick="sendReply()">${ic(
+    "send"
+  )}返信を送信</button></div>`;
+}
+/* ---- アイコン / 名前 / メッセージ の行表示 ---- */
+S.av = {};
+const ICONS = [
+  "user-round",
+  "cat",
+  "dog",
+  "bird",
+  "fish",
+  "rabbit",
+  "rocket",
+  "star",
+  "leaf",
+  "flower-2",
+  "smile",
+  "book-open",
+];
+function av(name, ai) {
+  if (ai)
+    return `<span class="av ai" aria-hidden="true">${ic("sparkles")}</span>`;
+  const a = S.av[name];
+  if (a && a.t === "img")
+    return `<span class="av"><img src="${a.v}" alt=""></span>`;
+  return `<span class="av ${avCls(a)}" aria-hidden="true">${ic(
+    a ? a.v : "user-round"
+  )}</span>`;
+}
+function msgRow(x, sel, canReply) {
+  const body = x.b
+    ? ic("ban") + "不適切な表現が含まれるため送信できませんでした"
+    : esc(x.t);
+  const act =
+    canReply && !x.b && !x.ai
+      ? `<button class="tb" style="padding:0" onclick="openThread(${
+          x.id
+        })">${ic("message-square-reply")}${
+          rc(x.id) ? rc(x.id) + "件の返信" : "返信"
+        }</button>`
+      : "";
+  return `<div class="msgrow ${sel ? "sel" : ""} ${x.b ? "blocked" : ""}">${av(
+    x.u,
+    x.ai
+  )}<div class="mb"><b class="nm">${esc(
+    x.u
+  )}</b><div>${body}</div>${act}</div></div>`;
+}
+/* ---- ダイアログ ---- */
+function dlgShow(html) {
+  $("dc").innerHTML = html;
+  icons();
+  if (!$("dlg").open) $("dlg").showModal();
+}
+function dlgClose() {
+  $("dlg").close();
+}
+function openTaskDialog() {
+  S.asg = S.me.role === "student" ? S.me.n : "";
+  dlgShow(`<h2 id="dt">タスクを追加</h2><div class="col"><div><label for="tt">タスク名</label><input id="tt" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)addTodo()"></div>
+ <fieldset class="fs"><legend>担当（登録されている名前から選ぶ）</legend><label for="as" class="sr">担当を検索</label><input id="as" type="search" placeholder="名前で検索" autocomplete="off" oninput="asgList()"><div id="al" class="al" role="radiogroup" aria-label="担当の候補（五十音順）"></div><p style="color:var(--mu);font-size:14px;margin:4px 0 0">候補は五十音順です。ひらがな・カタカナどちらでも検索できます。</p></fieldset>
+ <div><label for="td">期限</label><input id="td" type="date"></div><p id="derr" role="alert" style="color:var(--err);font-weight:700"></p><div class="row" style="justify-content:flex-end"><button class="btn sec" onclick="dlgClose()">キャンセル</button><button class="btn" onclick="addTodo()">${ic(
+   "plus"
+ )}追加する</button></div></div>`);
+  asgList();
+  $("tt").focus();
+}
+const toHira = (s) =>
+  s.replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 96));
+function asgList() {
+  const q = toHira($("as").value.trim().toLowerCase());
+  const names = [...S.users]
+    .sort((a, b) => toHira(a).localeCompare(toHira(b), "ja"))
+    .filter((n) => toHira(n.toLowerCase()).includes(q));
+  $("al").innerHTML =
+    ["", ...names]
+      .map(
+        (n) =>
+          `<label class="opt"><input type="radio" name="asg" value="${esc(
+            n
+          )}" ${
+            S.asg === n ? "checked" : ""
+          } onchange="S.asg=this.value"><span>${
+            n ? esc(n) : "担当なし（未定）"
+          }</span></label>`
+      )
+      .join("") +
+    (names.length
+      ? ""
+      : '<p class="empty" style="padding:8px">該当する名前がありません</p>');
+}
 function addTodo() {
   const t = $("tt").value.trim();
-  if (!t) return;
-  S.todos.push({ t, a: $("ta").value.trim(), d: $("td").value, c: false });
+  if (!t) {
+    $("derr").textContent = "エラー: タスク名を入力してください。";
+    return;
+  }
+  S.todos.push({ t, a: S.asg || "", d: $("td").value, c: false });
+  dlgClose();
   render();
 }
+function openProfile() {
+  dlgShow(
+    `<h2 id="dt">アイコンを設定</h2><div class="col">${pickerHTML(
+      S.av[S.me.n],
+      "set"
+    )}<p id="derr" role="alert" style="color:var(--err);font-weight:700"></p><div class="row" style="justify-content:flex-end"><button class="btn sec" onclick="delete S.av[S.me.n];render();openProfile()">初期アイコンに戻す</button><button class="btn" onclick="dlgClose()">閉じる</button></div></div>`
+  );
+}
+function setIcon(n) {
+  const p = S.av[S.me.n];
+  S.av[S.me.n] = {
+    t: "icon",
+    v: n,
+    col: (p && p.t === "icon" && p.col) || "cyan",
+  };
+  render();
+  openProfile();
+}
+function setCol(k) {
+  const p = S.av[S.me.n];
+  S.av[S.me.n] = {
+    t: "icon",
+    v: p && p.t === "icon" ? p.v : "user-round",
+    col: k,
+  };
+  render();
+  openProfile();
+}
+function setImg(i) {
+  pickImg(i);
+}
+function pickImg(inp) {
+  const f = inp.files[0];
+  if (!f) return;
+  if (!/^image\//.test(f.type)) {
+    $("derr").textContent = "エラー: 画像ファイルを選んでください。";
+    return;
+  }
+  const rd = new FileReader();
+  rd.onload = () => {
+    const im = new Image();
+    im.onload = () => {
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = 96;
+      const s = Math.min(im.width, im.height);
+      cv.getContext("2d").drawImage(
+        im,
+        (im.width - s) / 2,
+        (im.height - s) / 2,
+        s,
+        s,
+        0,
+        0,
+        96,
+        96
+      );
+      S.av[S.me.n] = { t: "img", v: cv.toDataURL("image/jpeg", 0.85) };
+      render();
+      openProfile();
+    };
+    im.onerror = () => {
+      $("derr").textContent = "エラー: 画像を読み込めませんでした。";
+    };
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+}
+
+S.lav = null;
+S.users = ["ミサキ", "ケン"];
+function lavRender() {
+  $("lav").innerHTML =
+    pickerHTML(S.lav, "lav") +
+    `<button class="tb" style="padding:0" onclick="S.lav=null;lavRender()">初期アイコンに戻す</button>`;
+  icons();
+}
+function lavIcon(n) {
+  const p = S.lav;
+  S.lav = { t: "icon", v: n, col: (p && p.t === "icon" && p.col) || "cyan" };
+  lavRender();
+}
+function lavCol(k) {
+  const p = S.lav;
+  S.lav = { t: "icon", v: p && p.t === "icon" ? p.v : "user-round", col: k };
+  lavRender();
+}
+function lavImg(inp) {
+  const f = inp.files[0];
+  if (!f) return;
+  if (!/^image\//.test(f.type)) {
+    $("lerr").textContent = "エラー: 画像ファイルを選んでください。";
+    return;
+  }
+  const rd = new FileReader();
+  rd.onload = () => {
+    const im = new Image();
+    im.onload = () => {
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = 96;
+      const s = Math.min(im.width, im.height);
+      cv.getContext("2d").drawImage(
+        im,
+        (im.width - s) / 2,
+        (im.height - s) / 2,
+        s,
+        s,
+        0,
+        0,
+        96,
+        96
+      );
+      S.lav = { t: "img", v: cv.toDataURL("image/jpeg", 0.85) };
+      lavRender();
+    };
+    im.onerror = () => {
+      $("lerr").textContent = "エラー: 画像を読み込めませんでした。";
+    };
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+}
+const COLS = ["cyan", "blue", "green", "orange", "purple", "pink"],
+  CN = {
+    cyan: "シアン",
+    blue: "青",
+    green: "緑",
+    orange: "オレンジ",
+    purple: "紫",
+    pink: "ピンク",
+  };
+const IJ = {
+  "user-round": "ひと",
+  cat: "ねこ",
+  dog: "いぬ",
+  bird: "とり",
+  fish: "さかな",
+  rabbit: "うさぎ",
+  rocket: "ロケット",
+  star: "ほし",
+  leaf: "はっぱ",
+  "flower-2": "はな",
+  smile: "えがお",
+  "book-open": "ほん",
+};
+function avCls(a) {
+  return a && a.t === "icon" && a.col ? "c-" + a.col : "";
+}
+function pickerHTML(a, pre) {
+  const ic_ = a && a.t === "icon",
+    col = ic_ && a.col ? a.col : "cyan";
+  const pv =
+    a && a.t === "img"
+      ? `<span class="av big"><img src="${a.v}" alt=""></span>`
+      : `<span class="av big ${avCls(a)}">${ic(
+          ic_ ? a.v : "user-round"
+        )}</span>`;
+  return `<div style="display:flex;align-items:center;gap:12px">${pv}<span style="color:var(--mu)">${
+    a ? "選択中のアイコン" : "未設定（初期アイコン）"
+  }</span></div>
+ <div><b>色</b><div class="sw" role="group" aria-label="色">${COLS.map(
+   (k) =>
+     `<button type="button" class="c-${k}" aria-label="${
+       CN[k]
+     }" aria-pressed="${ic_ && col === k}" onclick="${pre}Col('${k}')">${
+       ic_ && col === k ? ic("check") : ""
+     }</button>`
+ ).join("")}</div></div>
+ <div><b>アイコン</b><div class="ig" role="group" aria-label="アイコン">${ICONS.map(
+   (n) =>
+     `<button type="button" class="c-${col}" aria-label="${
+       IJ[n]
+     }" aria-pressed="${ic_ && a.v === n}" onclick="${pre}Icon('${n}')">${ic(
+       n
+     )}</button>`
+ ).join("")}</div></div>
+ <div><label for="${pre}im">画像を使う</label><input id="${pre}im" type="file" accept="image/*" onchange="${pre}Img(this)"></div>`;
+}
+lavRender();

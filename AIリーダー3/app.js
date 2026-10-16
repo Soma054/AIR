@@ -1,11 +1,26 @@
+const T0 = (h, m) => new Date().setHours(h, m, 0, 0);
+const fmt = (ts) => {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return (
+    String(d.getHours()).padStart(2, "0") +
+    ":" +
+    String(d.getMinutes()).padStart(2, "0")
+  );
+};
 const S = {
   room: { name: "探究: 地域の防災マップ", code: "482915", limit: 20, used: 0 },
   me: null,
   tab: "chat",
   busy: false,
   msgs: [
-    { id: 1, u: "ミサキ", t: "防災マップは小学生向けにしたいな" },
-    { id: 2, u: "ケン", t: "避難所の情報はどこから集める？" },
+    {
+      id: 1,
+      u: "ミサキ",
+      ts: T0(10, 32),
+      t: "防災マップは小学生向けにしたいな",
+    },
+    { id: 2, u: "ケン", ts: T0(10, 35), t: "避難所の情報はどこから集める？" },
   ],
   todos: [{ t: "市の防災サイトを調べる", a: "ミサキ", d: "", c: false }],
   risks: [],
@@ -106,19 +121,21 @@ function join(role) {
     }
   }
   S.me = { n, role };
+  if (role === "teacher") S.hasTeacher = true;
   if (S.lav) S.av[n] = S.lav;
   if (role === "student" && !S.users.includes(n)) S.users.push(n);
   S.tab = "chat";
   $("login").style.display = "none";
   $("app").style.display = "flex";
   render();
+  if (role === "student") openCatchup(true);
 }
 function doLeave() {
   dlgClose();
   S.me = null;
   S.th = null;
   $("app").style.display = "none";
-  $("login").style.display = "block";
+  $("login").style.display = "";
   hint();
 }
 function leave() {
@@ -133,6 +150,10 @@ function setTab(t) {
     S.unread = 0;
   }
   render();
+  const pn = $("pane");
+  pn.classList.remove("pfade");
+  void pn.offsetWidth;
+  pn.classList.add("pfade");
 }
 function render() {
   $("hName").textContent = S.room.name;
@@ -143,8 +164,18 @@ function render() {
   $("hMe").innerHTML =
     av(S.me.n) + esc(S.me.role === "teacher" ? "先生" : S.me.n);
   $("hMe").setAttribute("aria-label", "アイコンを設定（" + S.me.n + "）");
+  const ms = members();
+  $("hMem").innerHTML = `<span class="stack">${ms
+    .slice(0, 3)
+    .map((m) => av(m.n))
+    .join("")}</span><b>${ms.length}</b><span>人</span>`;
+  $("hMem").setAttribute(
+    "aria-label",
+    `参加メンバー${ms.length}人。押すと一覧を開きます`
+  );
   const tabs = [
     ["chat", "議論チャット", "messages-square"],
+    ["ws", "ワークシート", "file-text"],
     ["risk", "リスク・不明点", "triangle-alert"],
     ["src", "調査・ソース", "search"],
   ];
@@ -166,48 +197,61 @@ function render() {
   const keep = $("mi")?.value;
   $("pane").innerHTML = {
     chat,
+    ws: wsTab,
     risk: riskTab,
     src: srcTab,
     dash,
     todo: () => `<div class="card scroll">${todoPanel()}</div>`,
   }[S.tab]();
   const sc = $("pane").querySelector(".scroll");
-  if (sc && S.tab === "chat") sc.scrollTop = sc.scrollHeight;
-  if (keep && $("mi")) $("mi").value = keep;
+  if (sc && S.tab === "chat")
+    sc.scrollTop = S.keepY != null ? S.keepY : sc.scrollHeight;
+  S.keepY = null;
+  if (keep && $("mi")) {
+    $("mi").value = keep;
+    grow($("mi"));
+  }
   $("side").innerHTML = mob() ? "" : todoPanel();
   icons();
   const tl = document.querySelector(".tl");
   if (tl) tl.scrollTop = tl.scrollHeight;
+  S.msgs.forEach((m) => S.seen.add(m.id));
+  S.todos.forEach((t) => S.tseen.add(t));
+  S.armed = true;
+  S.flashRisk = null;
 }
 function todoPanel() {
   if (S.th && msgById(S.th)) return threadPanel();
-  return `<div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1;margin:0">やることリスト</h2><button class="btn sm" onclick="openTaskDialog()">${ic(
-    "plus"
-  )}タスク追加</button></div>${
-    S.todos
-      .map((x, i) => ({ x, i }))
-      .sort((p, q) => p.x.c - q.x.c)
-      .map(
-        ({ x, i }) =>
-          `<div class="todo ${x.c ? "done" : ""} ${
-            S.hl === x ? "hl" : ""
-          }"><input type="checkbox" aria-label="完了にする: ${esc(x.t)}" ${
-            x.c ? "checked" : ""
-          } onchange="tog(${i})"><div style="flex:1"><span class="t">${esc(
-            x.t
-          )}</span><br><small style="color:var(--mu)">${esc(
-            x.a || "担当未定"
-          )}${x.d ? " / 期限 " + x.d : ""}${
-            x.ai ? " / AI提案" : ""
-          }</small></div><button class="tb" aria-label="編集" onclick="edit(${i})">${ic(
-            "pencil"
-          )}</button><button class="tb" aria-label="削除" onclick="S.todos.splice(${i},1);render()">${ic(
-            "trash-2"
-          )}</button></div>`
-      )
-      .join("") ||
-    '<p class="empty">やることはまだありません。「タスク追加」から作れます。</p>'
-  }`;
+  return (
+    issuesPanel() +
+    `<div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1;margin:0">やることリスト</h2><button class="btn sm" onclick="openTaskDialog()">${ic(
+      "plus"
+    )}タスク追加</button></div>${
+      S.todos
+        .map((x, i) => ({ x, i }))
+        .sort((p, q) => p.x.c - q.x.c)
+        .map(
+          ({ x, i }) =>
+            `<div class="todo ${x.c ? "done" : ""} ${S.hl === x ? "hl" : ""} ${
+              S.armed && !S.tseen.has(x) ? "fresh" : ""
+            }"><input type="checkbox" aria-label="完了にする: ${esc(x.t)}" ${
+              x.c ? "checked" : ""
+            } onchange="tog(${i})"><div style="flex:1"><span class="t">${esc(
+              x.t
+            )}</span><br><small style="color:var(--mu)">${esc(
+              x.a || "担当未定"
+            )}${x.d ? " / 期限 " + x.d : ""}${
+              x.ai ? " / AI提案" : ""
+            }</small></div><button class="tb" aria-label="編集" onclick="edit(${i})">${ic(
+              "pencil"
+            )}</button><button class="tb" aria-label="削除" onclick="delTodo(${i})">${ic(
+              "trash-2"
+            )}</button></div>`
+        )
+        .join("") ||
+      '<p class="empty">やることはまだありません。「タスク追加」から作れます。</p>'
+    }`
+  );
 }
 function chat() {
   const m = S.msgs
@@ -223,7 +267,7 @@ function chat() {
     : "";
   const left = S.room.limit - S.room.used;
   return `<div class="scroll" role="log" aria-label="議論">${m}${sg}</div>
- <div class="compose"><div><label for="mi" class="sr">メッセージまたはAIへの質問</label><input id="mi" placeholder="メッセージ、またはAIへの質問" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)send()"></div><button class="btn sec" onclick="send()">${ic(
+ <div class="compose"><div><label for="mi" class="sr">メッセージまたはAIへの質問</label><textarea id="mi" rows="1" placeholder="メッセージ、またはAIへの質問（Shift+Enterで改行）" oninput="grow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();send()}"></textarea></div><button class="btn sec" onclick="send()">${ic(
    "send"
  )}送信</button><button class="btn" ${
     S.busy || left < 1 ? "disabled" : ""
@@ -240,12 +284,14 @@ function send() {
   if (!v) return;
   S.msgs.push({
     id: Date.now(),
+    ts: Date.now(),
     u: S.me.n,
     t: v,
     b: NG.some((w) => v.includes(w)),
   });
   $("mi").value = "";
   render();
+  $("mi") && $("mi").focus();
 }
 function askAI() {
   if (S.busy || S.room.used >= S.room.limit) return;
@@ -286,11 +332,13 @@ function askAI() {
       : "次回までに各自の調査結果を1つずつ共有する";
     S.msgs.push({
       id: Date.now(),
+      ts: Date.now(),
       u: "AI",
       ai: 1,
       t: "リスク・不明点タブに3件追加しました。どう扱うかは皆さんで決めてください。",
     });
     render();
+    if ($("mi")) $("mi").focus();
     toast("AIの意見が3件届きました", "確認する", () => setTab("risk"));
   }, 900);
 }
@@ -312,33 +360,55 @@ function riskTab() {
         (r, i) =>
           `<div class="card ${
             r.st === "todo" ? "rk-todo" : r.st === "done" ? "rk-done" : ""
-          }"><span class="tag ${r.c}">${ic(CL[r.c][0])}${
+          } ${
+            S.flashRisk === i ? "pop" : ""
+          }"><div class="rh"><span class="tag ${r.c}">${ic(CL[r.c][0])}${
             CL[r.c][1]
-          }</span> <b>${esc(r.t)}</b>${
+          }</span><b class="rt">${esc(r.t)}</b>${
             r.st === "todo"
-              ? ` <button class="go" onclick="goTodo(${i})">やることリストへ移動${ic(
+              ? `<button class="go" onclick="goTodo(${i})">やることリストへ移動${ic(
                   "arrow-right"
                 )}</button>`
               : r.st === "done"
-              ? ` <span class="tag okc">${ic("check")}対処済み</span>`
+              ? `<span class="tag okc">${ic("check")}対処済み</span>`
               : ""
-          }${
-            r.st !== "open"
-              ? ` <button class="tb" onclick="S.risks[${i}].st='open';render()">未対応に戻す</button>`
-              : ""
-          }<p>${esc(r.d)}</p>${
+          }</div><p>${esc(r.d)}</p><div class="row">${
             r.st === "open"
-              ? `<div class="row"><button class="btn sm" onclick="riskTodo(${i})">${ic(
+              ? `<button class="btn sm" onclick="riskTodo(${i})">${ic(
                   "list-plus"
-                )}やることリストに入れる</button><button class="btn sec sm" onclick="S.risks[${i}].st='done';render()">${ic(
+                )}やることリストに入れる</button><button class="btn sec sm" onclick="S.risks[${i}].st='done';S.flashRisk=${i};render()">${ic(
                   "check"
-                )}対処済みにする</button></div>`
-              : ""
-          }</div>`
+                )}対処済みにする</button>`
+              : `<button class="btn sec sm" onclick="unres(${i})">${ic(
+                  "undo-2"
+                )}未対応に戻す</button>`
+          }</div></div>`
       )
       .join("") ||
     '<div class="empty ctr"><span class="em" aria-hidden="true"><i data-lucide="smile"></i></span><b>おどろくほど平和ですね。でも、見落としは本当にゼロ？</b><span class="sub">チャットで「AIに意見を求める」を押すと、気づいていないリスクや「？」がここに届きます。</span></div>'
   }</div>`;
+}
+function unres(i) {
+  const r = S.risks[i];
+  if (r.st === "todo" && r.todo) {
+    const k = S.todos.indexOf(r.todo);
+    if (k >= 0) S.todos.splice(k, 1);
+  }
+  r.todo = null;
+  r.st = "open";
+  S.flashRisk = i;
+  render();
+}
+function delTodo(i) {
+  const o = S.todos[i];
+  S.todos.splice(i, 1);
+  S.risks.forEach((r) => {
+    if (r.todo === o) {
+      r.todo = null;
+      r.st = "open";
+    }
+  });
+  render();
 }
 function goTodo(i) {
   const r = S.risks[i];
@@ -357,6 +427,7 @@ function riskTodo(i) {
   S.todos.push(o);
   r.todo = o;
   r.st = "todo";
+  S.flashRisk = i;
   render();
   toast("やることリストに追加しました");
 }
@@ -458,6 +529,7 @@ function sendReply() {
   if (!v || !S.th) return;
   S.msgs.push({
     id: Date.now(),
+    ts: Date.now(),
     u: S.me.n,
     t: v,
     p: S.th,
@@ -483,7 +555,7 @@ function threadPanel() {
    .join("")}</div>
  <label for="ri" style="margin-top:8px">${esc(
    p.u
- )} さんのメッセージに返信</label><input id="ri" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)sendReply()"><button class="btn" style="margin-top:8px" onclick="sendReply()">${ic(
+ )} さんのメッセージに返信</label><textarea id="ri" rows="1" placeholder="返信（Shift+Enterで改行）" oninput="grow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();sendReply()}"></textarea><button class="btn" style="margin-top:8px" onclick="sendReply()">${ic(
     "send"
   )}返信を送信</button></div>`;
 }
@@ -518,19 +590,31 @@ function msgRow(x, sel, canReply) {
     ? ic("ban") + "不適切な表現が含まれるため送信できませんでした"
     : esc(x.t);
   const act =
-    canReply && !x.b && !x.ai
-      ? `<button class="tb" style="padding:0" onclick="openThread(${
+    !x.b && !x.ai
+      ? `<div class="rxbar">${rxChips(
+          x
+        )}<button class="rx add" aria-label="リアクションを付ける" onclick="openRx(${
           x.id
-        })">${ic("message-square-reply")}${
-          rc(x.id) ? rc(x.id) + "件の返信" : "返信"
-        }</button>`
+        })">${ic("smile-plus")}</button></div>` +
+        (canReply
+          ? `<div class="acts"><button class="tb" onclick="openThread(${
+              x.id
+            })">${ic("message-square-reply")}${
+              rc(x.id) ? rc(x.id) + "件の返信" : "返信"
+            }</button><button class="tb" onclick="openClip(${x.id})">${ic(
+              "file-input"
+            )}ワークシートに入れる</button><button class="tb" onclick="addIssue(${
+              x.id
+            })">${ic("flag")}論点にする</button></div>`
+          : "")
       : "";
-  return `<div class="msgrow ${sel ? "sel" : ""} ${x.b ? "blocked" : ""}">${av(
-    x.u,
-    x.ai
-  )}<div class="mb"><b class="nm">${esc(
+  return `<div class="msgrow ${sel ? "sel" : ""} ${x.b ? "blocked" : ""} ${
+    S.armed && !S.seen.has(x.id) ? "fresh" : ""
+  }">${av(x.u, x.ai)}<div class="mb"><div class="mh"><b class="nm">${esc(
     x.u
-  )}</b><div>${body}</div>${act}</div></div>`;
+  )}</b><time class="tm">${fmt(
+    x.ts
+  )}</time></div><div>${body}</div>${act}</div></div>`;
 }
 /* ---- ダイアログ ---- */
 function dlgShow(html) {
@@ -618,47 +702,28 @@ function setImg(i) {
 }
 function pickImg(inp) {
   const f = inp.files[0];
-  if (!f) return;
-  if (!/^image\//.test(f.type)) {
-    $("derr").textContent = "エラー: 画像ファイルを選んでください。";
-    return;
-  }
-  const rd = new FileReader();
-  rd.onload = () => {
-    const im = new Image();
-    im.onload = () => {
-      const cv = document.createElement("canvas");
-      cv.width = cv.height = 96;
-      const s = Math.min(im.width, im.height);
-      cv.getContext("2d").drawImage(
-        im,
-        (im.width - s) / 2,
-        (im.height - s) / 2,
-        s,
-        s,
-        0,
-        0,
-        96,
-        96
-      );
-      S.av[S.me.n] = { t: "img", v: cv.toDataURL("image/jpeg", 0.85) };
+  inp.value = "";
+  if (f)
+    cropStart(f, (u) => {
+      S.av[S.me.n] = { t: "img", v: u };
       render();
       openProfile();
-    };
-    im.onerror = () => {
-      $("derr").textContent = "エラー: 画像を読み込めませんでした。";
-    };
-    im.src = rd.result;
-  };
-  rd.readAsDataURL(f);
+    });
 }
 
 S.lav = null;
-S.users = ["ミサキ", "ケン"];
+S.users = ["ミサキ", "ケン", "ハルカ", "ソウタ"];
 function lavRender() {
   $("lav").innerHTML =
     pickerHTML(S.lav, "lav") +
     `<button class="tb" style="padding:0" onclick="S.lav=null;lavRender()">初期アイコンに戻す</button>`;
+  const p = S.lav;
+  $("lavpv").innerHTML =
+    p && p.t === "img"
+      ? `<span class="av"><img src="${p.v}" alt=""></span>`
+      : `<span class="av ${avCls(p)}">${ic(
+          p && p.t === "icon" ? p.v : "user-round"
+        )}</span>`;
   icons();
 }
 function lavIcon(n) {
@@ -673,40 +738,14 @@ function lavCol(k) {
 }
 function lavImg(inp) {
   const f = inp.files[0];
-  if (!f) return;
-  if (!/^image\//.test(f.type)) {
-    $("lerr").textContent = "エラー: 画像ファイルを選んでください。";
-    return;
-  }
-  const rd = new FileReader();
-  rd.onload = () => {
-    const im = new Image();
-    im.onload = () => {
-      const cv = document.createElement("canvas");
-      cv.width = cv.height = 96;
-      const s = Math.min(im.width, im.height);
-      cv.getContext("2d").drawImage(
-        im,
-        (im.width - s) / 2,
-        (im.height - s) / 2,
-        s,
-        s,
-        0,
-        0,
-        96,
-        96
-      );
-      S.lav = { t: "img", v: cv.toDataURL("image/jpeg", 0.85) };
+  inp.value = "";
+  if (f)
+    cropStart(f, (u) => {
+      S.lav = { t: "img", v: u };
       lavRender();
-    };
-    im.onerror = () => {
-      $("lerr").textContent = "エラー: 画像を読み込めませんでした。";
-    };
-    im.src = rd.result;
-  };
-  rd.readAsDataURL(f);
+    });
 }
-const COLS = ["cyan", "blue", "green", "orange", "purple", "pink"],
+const COLS = ["cyan", "blue", "green", "orange", "purple", "pink", "black"],
   CN = {
     cyan: "シアン",
     blue: "青",
@@ -714,6 +753,7 @@ const COLS = ["cyan", "blue", "green", "orange", "purple", "pink"],
     orange: "オレンジ",
     purple: "紫",
     pink: "ピンク",
+    black: "黒",
   };
 const IJ = {
   "user-round": "ひと",
@@ -737,13 +777,15 @@ function pickerHTML(a, pre) {
     col = ic_ && a.col ? a.col : "cyan";
   const pv =
     a && a.t === "img"
-      ? `<span class="av big"><img src="${a.v}" alt=""></span>`
-      : `<span class="av big ${avCls(a)}">${ic(
-          ic_ ? a.v : "user-round"
-        )}</span>`;
-  return `<div style="display:flex;align-items:center;gap:12px">${pv}<span style="color:var(--mu)">${
-    a ? "選択中のアイコン" : "未設定（初期アイコン）"
-  }</span></div>
+      ? `<span class="av"><img src="${a.v}" alt=""></span>`
+      : `<span class="av ${avCls(a)}">${ic(ic_ ? a.v : "user-round")}</span>`;
+  return `<div><b>Preview</b><div class="msgrow pv">${pv}<div class="mb"><div class="mh"><b class="nm">${esc(
+    pre === "set"
+      ? S.me.n
+      : ($("nick") && $("nick").value.trim()) || "ニックネーム"
+  )}</b><time class="tm">${fmt(
+    Date.now()
+  )}</time></div><div>${humor()}</div></div></div></div>
  <div><b>色</b><div class="sw" role="group" aria-label="色">${COLS.map(
    (k) =>
      `<button type="button" class="c-${k}" aria-label="${
@@ -760,6 +802,611 @@ function pickerHTML(a, pre) {
        n
      )}</button>`
  ).join("")}</div></div>
- <div><label for="${pre}im">画像を使う</label><input id="${pre}im" type="file" accept="image/*" onchange="${pre}Img(this)"></div>`;
+ <div><label class="btn sec fbtn" for="${pre}im">${ic(
+    "image-up"
+  )}画像を選んで切り抜く</label><input id="${pre}im" class="sr" type="file" accept="image/*" onchange="${pre}Img(this)"></div>`;
 }
 lavRender();
+
+function grow(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+}
+
+function toggleLav() {
+  const b = $("lavbox"),
+    open = b.hidden;
+  b.hidden = !open;
+  $("lavtg").setAttribute("aria-expanded", open);
+}
+
+/* ---- 画像の切り抜き ---- */
+let CR = null;
+function cropStart(file, done) {
+  if (!/^image\//.test(file.type)) {
+    toast("画像ファイルを選んでください");
+    return;
+  }
+  const rd = new FileReader();
+  rd.onload = () => {
+    const im = new Image();
+    im.onload = () => {
+      CR = {
+        im,
+        done,
+        z: 1,
+        base: 240 / Math.min(im.width, im.height),
+        cx: im.width / 2,
+        cy: im.height / 2,
+      };
+      dlgShow(
+        `<h2 id="dt">アイコンの位置を調整</h2><div class="col"><canvas id="cv" class="cv" width="240" height="240" tabindex="0" aria-label="切り抜きの位置（ドラッグまたは矢印キーで移動）"></canvas><div><label for="zm">拡大</label><input id="zm" type="range" min="1" max="3" step="0.01" value="1" oninput="CR.z=+this.value;cropDraw()"></div><p style="color:var(--mu);margin:0">ドラッグで位置を動かせます。丸の中が、アイコンになります。</p><div class="row" style="justify-content:flex-end"><button class="btn sec" onclick="dlgClose()">キャンセル</button><button class="btn" onclick="cropDone()">決定</button></div></div>`
+      );
+      cropBind();
+      cropDraw();
+    };
+    im.onerror = () => toast("画像を読み込めませんでした");
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+function cropClamp() {
+  const s = CR.base * CR.z,
+    h = 120 / s;
+  CR.cx = Math.min(Math.max(CR.cx, h), CR.im.width - h);
+  CR.cy = Math.min(Math.max(CR.cy, h), CR.im.height - h);
+}
+function cropDraw() {
+  cropClamp();
+  const cv = $("cv"),
+    g = cv.getContext("2d"),
+    s = CR.base * CR.z;
+  g.clearRect(0, 0, 240, 240);
+  g.drawImage(
+    CR.im,
+    120 - CR.cx * s,
+    120 - CR.cy * s,
+    CR.im.width * s,
+    CR.im.height * s
+  );
+  g.fillStyle = "rgba(0,0,0,.55)";
+  g.beginPath();
+  g.rect(0, 0, 240, 240);
+  g.arc(120, 120, 110, 0, Math.PI * 2, true);
+  g.fill("evenodd");
+  g.strokeStyle = "#fff";
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(120, 120, 110, 0, Math.PI * 2);
+  g.stroke();
+}
+function cropBind() {
+  const cv = $("cv");
+  let d = null;
+  cv.onpointerdown = (e) => {
+    d = { x: e.clientX, y: e.clientY };
+    cv.setPointerCapture(e.pointerId);
+    cv.style.cursor = "grabbing";
+  };
+  cv.onpointermove = (e) => {
+    if (!d) return;
+    const s = CR.base * CR.z;
+    CR.cx -= ((e.clientX - d.x) * 240) / cv.clientWidth / s;
+    CR.cy -= ((e.clientY - d.y) * 240) / cv.clientHeight / s;
+    d = { x: e.clientX, y: e.clientY };
+    cropDraw();
+  };
+  cv.onpointerup = cv.onpointercancel = () => {
+    d = null;
+    cv.style.cursor = "grab";
+  };
+  cv.onkeydown = (e) => {
+    const k = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    }[e.key];
+    if (!k) return;
+    e.preventDefault();
+    const s = CR.base * CR.z;
+    CR.cx += (k[0] * 10) / s;
+    CR.cy += (k[1] * 10) / s;
+    cropDraw();
+  };
+}
+function cropDone() {
+  const s = CR.base * CR.z,
+    o = document.createElement("canvas");
+  o.width = o.height = 128;
+  o.getContext("2d").drawImage(
+    CR.im,
+    CR.cx - 120 / s,
+    CR.cy - 120 / s,
+    240 / s,
+    240 / s,
+    0,
+    0,
+    128,
+    128
+  );
+  const u = o.toDataURL("image/jpeg", 0.88),
+    f = CR.done;
+  CR = null;
+  dlgClose();
+  f(u);
+}
+
+function humor() {
+  const t = new Date().getHours();
+  if (t < 5) return "まだ起きているの？ 続きは明日にして、今日はもうねよう。";
+  if (t < 10) return "おはようございます。アイデアはまだ、半分ねています。";
+  if (t < 12) return "午前のうちに、名案をひとつ出す予定です。たぶん。";
+  if (t < 14)
+    return "おなかがすいて、ひらめきが出ません。先にお昼にしませんか。";
+  if (t < 17) return "ねむけと戦いながら、ひらめきを待っています。";
+  if (t < 20) return "そろそろ帰る時間。でも、あとひとつだけ思いつきました。";
+  return "もうこんな時間。続きは明日にしませんか。";
+}
+
+function themeInit() {
+  document
+    .querySelectorAll(".thm")
+    .forEach(
+      (e) =>
+        (e.innerHTML = `<span class="ti i-sun">${ic(
+          "sun"
+        )}</span><button type="button" class="sw2" role="switch" aria-checked="false" aria-label="ダークモード" onclick="toggleTheme(event)"><span class="knob"></span></button><span class="ti i-moon">${ic(
+          "moon"
+        )}</span>`)
+    );
+  let t = null;
+  try {
+    t = localStorage.getItem("theme");
+  } catch (e) {}
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  if (t !== "light" && t !== "dark") t = mq.matches ? "dark" : "light";
+  setTheme(t, true);
+  mq.addEventListener("change", (e) => {
+    let s = null;
+    try {
+      s = localStorage.getItem("theme");
+    } catch (x) {}
+    if (s !== "light" && s !== "dark")
+      setTheme(e.matches ? "dark" : "light", true);
+  });
+}
+function toggleTheme(ev) {
+  const next =
+    document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    setTheme(next);
+    return;
+  }
+  if (!document.startViewTransition) {
+    const r = document.documentElement;
+    r.classList.add("tfade");
+    setTheme(next);
+    setTimeout(() => r.classList.remove("tfade"), 450);
+    return;
+  }
+  const b =
+    ev && ev.currentTarget ? ev.currentTarget.getBoundingClientRect() : null;
+  const x = b ? b.left + b.width / 2 : innerWidth - 40,
+    y = b ? b.top + b.height / 2 : 30;
+  const rad = Math.hypot(
+    Math.max(x, innerWidth - x),
+    Math.max(y, innerHeight - y)
+  );
+  const t = document.startViewTransition(() => setTheme(next));
+  t.ready
+    .then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${rad}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration: 600,
+          easing: "ease-in-out",
+          pseudoElement: "::view-transition-new(root)",
+        }
+      );
+    })
+    .catch(() => {});
+}
+function setTheme(t, init) {
+  document.documentElement.dataset.theme = t;
+  document.querySelectorAll(".thm").forEach((e) => (e.dataset.mode = t));
+  document
+    .querySelectorAll(".sw2")
+    .forEach((b) => b.setAttribute("aria-checked", t === "dark"));
+  if (!init) {
+    try {
+      localStorage.setItem("theme", t);
+    } catch (e) {}
+  }
+  icons();
+}
+themeInit();
+
+function members() {
+  const st = [...S.users]
+    .sort((a, b) => toHira(a).localeCompare(toHira(b), "ja"))
+    .map((n) => ({ n, r: "生徒" }));
+  return S.hasTeacher ? [{ n: "先生", r: "先生" }, ...st] : st;
+}
+function openMembers() {
+  const ms = members();
+  dlgShow(
+    `<h2 id="dt">参加メンバー（${ms.length}人）</h2><div class="mlist">${ms
+      .map(
+        (m) =>
+          `<div class="mrow">${av(m.n)}<b>${esc(m.n)}</b>${
+            m.n === S.me.n ? '<span class="tag okc">あなた</span>' : ""
+          }<span class="mrole">${m.r}</span></div>`
+      )
+      .join(
+        ""
+      )}</div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="dlgClose()">閉じる</button></div>`
+  );
+}
+
+S.seen = new Set();
+S.tseen = new Set();
+S.armed = false;
+S.flashRisk = null;
+
+/* ---- ワークシート（AIなし）---- */
+S.ws = [
+  ["q", "問い・テーマ"],
+  ["r", "調べる（根拠・出典）"],
+  ["o", "自分たちの考え"],
+  ["c", "反対意見・別の見方"],
+  ["f", "まとめ・結論"],
+].map(([k, t]) => ({ k, t, items: [] }));
+S.ws[0].items.push({
+  id: 1,
+  t: "どんな防災マップなら、小学生の役に立つか",
+  by: "ミサキ",
+  ts: T0(10, 40),
+  src: "",
+});
+function wsTab() {
+  return `<div class="scroll">${S.ws
+    .map(
+      (s, si) =>
+        `<section class="card ws"><button class="wsh" aria-expanded="${!S
+          .wsClosed[s.k]}" onclick="wsToggle(${si})"><span>${esc(
+          s.t
+        )}</span><span class="wsn">${
+          s.items.length ? s.items.length + "件" : ""
+        }</span>${ic("chevron-down")}</button><div class="wsb" ${
+          S.wsClosed[s.k] ? "hidden" : ""
+        }>${
+          s.items
+            .map(
+              (it, ii) =>
+                `<div class="wi"><div class="wt">${esc(it.t)}${
+                  it.src
+                    ? `<div class="wq">${ic("quote")}${esc(it.src)}</div>`
+                    : ""
+                }</div><div class="wm"><span>${esc(it.by)} ${fmt(
+                  it.ts
+                )}</span><button class="tb" onclick="wsEdit(${si},${ii})" aria-label="編集">${ic(
+                  "pencil"
+                )}</button><button class="tb" onclick="wsDel(${si},${ii})" aria-label="削除">${ic(
+                  "trash-2"
+                )}</button></div></div>`
+            )
+            .join("") ||
+          '<p class="empty" style="padding:8px 0">まだ何も書かれていません</p>'
+        }<div class="row"><div style="flex:1 1 200px"><label for="wsi${si}" class="sr">${esc(
+          s.t
+        )}に書き込む</label><textarea id="wsi${si}" rows="1" placeholder="書き込む" oninput="grow(this)"></textarea></div><button class="btn sm" onclick="wsAdd(${si})">${ic(
+          "plus"
+        )}追加</button></div></div></section>`
+    )
+    .join("")}</div>`;
+}
+function wsAdd(si) {
+  const v = $("wsi" + si).value.trim();
+  if (!v) return;
+  S.ws[si].items.push({
+    id: Date.now(),
+    t: v,
+    by: S.me.n,
+    ts: Date.now(),
+    src: "",
+  });
+  render();
+}
+function wsDel(si, ii) {
+  S.ws[si].items.splice(ii, 1);
+  render();
+}
+function wsEdit(si, ii) {
+  const it = S.ws[si].items[ii],
+    v = prompt("内容を編集", it.t);
+  if (v && v.trim()) {
+    it.t = v.trim();
+    render();
+  }
+}
+/* ---- リアクション ---- */
+const RX = {
+  agree: ["thumbs-up", "賛成"],
+  ask: ["circle-help", "疑問・もう少し知りたい"],
+  source: ["search", "根拠がほしい"],
+  alt: ["lightbulb", "別の案がある"],
+  heart: ["heart", "スタンプ: ハート"],
+  star: ["star", "スタンプ: ほし"],
+  party: ["party-popper", "スタンプ: お祝い"],
+  smile: ["smile", "スタンプ: えがお"],
+};
+function rxChips(x) {
+  return Object.entries(x.rx || {})
+    .filter(([, v]) => v.length)
+    .map(
+      ([k, v]) =>
+        `<button class="rx ${
+          v.includes(S.me.n) ? "on" : ""
+        }" aria-pressed="${v.includes(S.me.n)}" aria-label="${RX[k][1]} ${
+          v.length
+        }人" onclick="toggleRx(${x.id},'${k}')">${ic(RX[k][0])}<span>${
+          v.length
+        }</span></button>`
+    )
+    .join("");
+}
+function toggleRx(id, k) {
+  const m = msgById(id);
+  m.rx = m.rx || {};
+  const a = (m.rx[k] = m.rx[k] || []);
+  const i = a.indexOf(S.me.n);
+  if (i >= 0) a.splice(i, 1);
+  else a.push(S.me.n);
+  const sc = document.querySelector("#pane .scroll");
+  S.keepY = sc ? sc.scrollTop : null;
+  render();
+}
+function openRx(id) {
+  dlgShow(
+    `<h2 id="dt">リアクションを選ぶ</h2><div class="rxgrid">${Object.entries(RX)
+      .map(
+        ([k, v]) =>
+          `<button class="rxo" onclick="dlgClose();toggleRx(${id},'${k}')">${ic(
+            v[0]
+          )}<span>${v[1]}</span></button>`
+      )
+      .join(
+        ""
+      )}</div><div class="row" style="justify-content:flex-end"><button class="btn sec" onclick="dlgClose()">閉じる</button></div>`
+  );
+}
+/* ---- 発言をワークシートに入れる ---- */
+function openClip(id) {
+  const m = msgById(id);
+  S.clip = { id, mode: "quote" };
+  dlgShow(`<h2 id="dt">ワークシートに入れる</h2><div class="col"><div class="rep"><small>${esc(
+    m.u
+  )}</small>${esc(m.t)}</div>
+ <fieldset class="fs"><legend>入れ方</legend><label class="opt"><input type="radio" name="cm" value="quote" checked onchange="clipMode(this.value)"><span>そのまま引用で入れる</span></label><label class="opt"><input type="radio" name="cm" value="rewrite" onchange="clipMode(this.value)"><span>自分の言葉に書き直して入れる</span></label></fieldset>
+ <div id="cw" hidden><label for="ct">自分の言葉で</label><textarea id="ct" rows="3" oninput="grow(this)"></textarea></div>
+ <fieldset class="fs"><legend>入れる項目</legend>${S.ws
+   .map(
+     (s, i) =>
+       `<label class="opt"><input type="radio" name="cs" value="${i}" ${
+         i === 1 ? "checked" : ""
+       }><span>${esc(s.t)}</span></label>`
+   )
+   .join("")}</fieldset>
+ <div class="row" style="justify-content:flex-end"><button class="btn sec" onclick="dlgClose()">キャンセル</button><button class="btn" onclick="clipDo()">${ic(
+   "file-input"
+ )}入れる</button></div></div>`);
+}
+function clipMode(v) {
+  S.clip.mode = v;
+  $("cw").hidden = v !== "rewrite";
+  if (v === "rewrite") $("ct").focus();
+}
+function clipDo() {
+  const m = msgById(S.clip.id),
+    si = +document.querySelector("input[name=cs]:checked").value;
+  let t, src;
+  if (S.clip.mode === "rewrite") {
+    t = $("ct").value.trim();
+    if (!t) {
+      toast("自分の言葉を入力してください");
+      return;
+    }
+    src = "もとの発言: " + m.u + "「" + m.t + "」";
+  } else {
+    t = m.t;
+    src = m.u + " さんの発言";
+  }
+  S.ws[si].items.push({ id: Date.now(), t, by: S.me.n, ts: Date.now(), src });
+  dlgClose();
+  render();
+  toast("ワークシートに入れました", "見る", () => setTab("ws"));
+}
+/* ---- 論点パネル（生徒の手だけで更新）---- */
+S.issues = [
+  { id: 1, t: "誰のためのマップか", st: "talk", reason: "" },
+  { id: 2, t: "避難所の情報をどこから集めるか", st: "talk", reason: "" },
+];
+const ST = {
+  talk: ["話し合い中", "message-circle"],
+  done: ["決まった", "check"],
+  hold: ["保留", "pause"],
+};
+function issuesPanel() {
+  const n = S.issues.length;
+  if (S.cur >= n) S.cur = Math.max(0, n - 1);
+  const x = S.issues[S.cur];
+  return `<div class="issues"><div style="display:flex;align-items:center;gap:4px"><h2 style="flex:1;margin:0">${ic(
+    "flag"
+  )}論点</h2>${
+    n > 1
+      ? `<button class="tb" aria-label="前の論点" onclick="issueNav(-1)">${ic(
+          "chevron-left"
+        )}</button><span style="color:var(--mu);font-size:13px">${
+          S.cur + 1
+        }/${n}</span><button class="tb" aria-label="次の論点" onclick="issueNav(1)">${ic(
+          "chevron-right"
+        )}</button>`
+      : ""
+  }${
+    n
+      ? `<button class="tb" aria-label="論点の一覧" onclick="openIssues()">${ic(
+          "list"
+        )}</button>`
+      : ""
+  }</div>${
+    x
+      ? `<div class="is is-${x.st}"><b>${esc(x.t)}</b>${
+          x.reason ? `<div class="isr">理由: ${esc(x.reason)}</div>` : ""
+        }<button class="go is-st" onclick="cycleIssue(${S.cur})">${ic(
+          ST[x.st][1]
+        )}${ST[x.st][0]}</button></div>`
+      : '<p class="empty" style="padding:8px 0">まだありません</p>'
+  }<button class="btn sec sm" style="margin-top:8px" onclick="openIssueAdd()">${ic(
+    "plus"
+  )}論点を追加</button></div><hr class="hr">`;
+}
+function cycleIssue(i) {
+  const x = S.issues[i],
+    nx = { talk: "done", done: "hold", hold: "talk" }[x.st];
+  if (nx === "done") {
+    const r = prompt("決まった理由を書いてください", x.reason || "");
+    if (r === null) return;
+    x.reason = r.trim();
+  } else x.reason = "";
+  x.st = nx;
+  render();
+}
+function addIssue(id) {
+  const m = msgById(id);
+  S.issues.push({
+    id: Date.now(),
+    t: m.t.slice(0, 40),
+    st: "talk",
+    reason: "",
+  });
+  S.cur = S.issues.length - 1;
+  render();
+  toast("論点に追加しました");
+}
+function addIssueManual() {
+  const v = $("ii").value.trim();
+  if (!v) return;
+  S.issues.push({ id: Date.now(), t: v, st: "talk", reason: "" });
+  render();
+  if ($("ii")) $("ii").focus();
+}
+/* ---- 追いつく（AIなしの版）---- */
+function openCatchup(first) {
+  const talk = S.issues.filter((x) => x.st !== "done"),
+    dn = S.issues.filter((x) => x.st === "done"),
+    empty = S.ws.filter((s) => !s.items.length).map((s) => s.t),
+    recent = S.msgs.filter((x) => !x.p && !x.b && !x.ai).slice(-5);
+  const pts = [
+    ...talk.slice(0, 2).map((x) => `「${esc(x.t)}」について、意見を書いてみる`),
+    ...empty.slice(0, 2).map((t) => `ワークシートの「${esc(t)}」がまだ空です`),
+  ];
+  dlgShow(`<h2 id="dt">いままでの議論に追いつく</h2><div class="col">${
+    first
+      ? '<p style="margin:0;color:var(--mu)">途中から参加した人も、ここを見れば議論に追いつけます。画面上の「追いつく」から、いつでも開けます。</p>'
+      : ""
+  }
+ <div><b>話し合い中・保留の論点</b>${
+   talk.length
+     ? `<ul>${talk
+         .map((x) => `<li>${esc(x.t)}（${ST[x.st][0]}）</li>`)
+         .join("")}</ul>`
+     : '<p style="margin:4px 0;color:var(--mu)">ありません</p>'
+ }</div>
+ <div><b>決まったこと</b>${
+   dn.length
+     ? `<ul>${dn
+         .map(
+           (x) =>
+             `<li>${esc(x.t)}${
+               x.reason ? "（理由: " + esc(x.reason) + "）" : ""
+             }</li>`
+         )
+         .join("")}</ul>`
+     : '<p style="margin:4px 0;color:var(--mu)">まだありません</p>'
+ }</div>
+ <div><b>最近の発言</b>${
+   recent
+     .map(
+       (m) =>
+         `<div class="rep" style="margin-top:6px"><small>${esc(m.u)} ${fmt(
+           m.ts
+         )}</small>${esc(m.t)}</div>`
+     )
+     .join("") || '<p style="margin:4px 0;color:var(--mu)">まだありません</p>'
+ }</div>
+ <div><b>参加できるポイント</b><ul>${
+   pts.map((p) => `<li>${p}</li>`).join("") ||
+   "<li>チャットに感想を書いてみる</li>"
+ }</ul></div>
+ <div class="row" style="justify-content:flex-end"><button class="btn" onclick="dlgClose()">閉じる</button></div></div>`);
+}
+
+S.cur = 0;
+S.wsClosed = {};
+function wsToggle(si) {
+  const k = S.ws[si].k;
+  S.wsClosed[k] = !S.wsClosed[k];
+  const sec = document.querySelectorAll(".ws")[si];
+  sec.querySelector(".wsb").hidden = S.wsClosed[k];
+  sec.querySelector(".wsh").setAttribute("aria-expanded", !S.wsClosed[k]);
+}
+function issueNav(d) {
+  const n = S.issues.length;
+  S.cur = (S.cur + d + n) % n;
+  render();
+}
+function openIssueAdd() {
+  dlgShow(
+    `<h2 id="dt">論点を追加</h2><div class="col"><div><label for="ii">論点</label><input id="ii" placeholder="例: 誰のためのマップか" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)issueDo()"></div><p id="derr" role="alert" style="color:var(--err);font-weight:700;margin:0"></p><div class="row" style="justify-content:flex-end"><button class="btn sec" onclick="dlgClose()">キャンセル</button><button class="btn" onclick="issueDo()">${ic(
+      "plus"
+    )}追加</button></div></div>`
+  );
+  $("ii").focus();
+}
+function issueDo() {
+  const v = $("ii").value.trim();
+  if (!v) {
+    $("derr").textContent = "エラー: 論点を入力してください。";
+    return;
+  }
+  S.issues.push({ id: Date.now(), t: v, st: "talk", reason: "" });
+  S.cur = S.issues.length - 1;
+  dlgClose();
+  render();
+}
+function openIssues() {
+  dlgShow(
+    `<h2 id="dt">論点の一覧</h2><div class="mlist">${
+      S.issues
+        .map(
+          (x, i) =>
+            `<div class="mrow"><div style="flex:1"><b>${esc(x.t)}</b>${
+              x.reason ? `<div class="isr">理由: ${esc(x.reason)}</div>` : ""
+            }</div><span class="tag ${x.st === "done" ? "okc" : ""}">${ic(
+              ST[x.st][1]
+            )}${
+              ST[x.st][0]
+            }</span><button class="tb" onclick="S.cur=${i};dlgClose();render()">表示</button><button class="tb" aria-label="削除" onclick="S.issues.splice(${i},1);render();openIssues()">${ic(
+              "trash-2"
+            )}</button></div>`
+        )
+        .join("") || '<p class="empty">まだありません</p>'
+    }</div><div class="row" style="justify-content:flex-end"><button class="btn" onclick="dlgClose()">閉じる</button></div>`
+  );
+}

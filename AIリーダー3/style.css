@@ -185,3 +185,145 @@
   .sw button{width:40px;height:40px;border-width:2px}.ig button{min-height:48px;border-width:2px}
   dialog{padding:24px;width:min(440px,92vw)}
   .tl{max-height:calc(100dvh - 460px)}
+  
+  /* ===== 時刻・テキストエリア・リスクカードの枠・スレッドの帯 ===== */
+  .mh{display:flex;align-items:baseline;gap:8px}.nm{display:inline}
+  .tm{font-size:12px;color:var(--mu);font-weight:400}
+  .mb>div:not(.mh){white-space:pre-wrap}
+  textarea{display:block;width:100%;min-height:40px;max-height:140px;resize:none;background:var(--card);border:2px solid var(--bd);border-radius:8px;padding:8px 12px;font:inherit;line-height:1.5;color:inherit}
+  .compose{align-items:flex-end}
+  .rk-todo{border:3px solid light-dark(#0057E7,#5C9DFF);background:var(--card)}
+  .rk-done{border:3px solid light-dark(#00A651,#34D07A);background:var(--card)}
+  .go{color:light-dark(#0057E7,#5C9DFF);border-color:light-dark(#0057E7,#5C9DFF)}
+  .msgrow.sel{background:transparent;box-shadow:none;border:0;border-left:4px solid var(--pri);border-radius:0 10px 10px 0}
+  
+  /* ===== バッジ類のサイズ統一 ===== */
+  .tag,.go{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:32px;padding:0 12px;border-radius:8px;border:2px solid;font-size:14px;font-weight:700;line-height:1;white-space:nowrap;min-height:0}
+  .tag svg,.go svg{width:16px;height:16px;vertical-align:0}
+  .go{background:transparent}
+  .rh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .rt{flex:1;min-width:140px;font-size:16px}
+  
+  [hidden]{display:none!important}
+  .acc{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;padding:0 14px;border:2px solid var(--bd);border-radius:8px;background:var(--card);cursor:pointer;font-weight:600;font-size:15px}
+  .acc:hover{background:var(--surf)}
+  .acc svg{transition:transform .2s}
+  .acc[aria-expanded="true"] svg{transform:rotate(180deg)}
+  
+  /* ===== 入室画面: 左に入室、右にアイコン ===== */
+  #login{max-width:900px}
+  .lg{display:grid;grid-template-columns:1fr 1fr;gap:32px;padding:24px}
+  .lgR{border-left:2px solid var(--dv);padding-left:32px;align-content:start}
+  @media(max-width:760px){.lg{grid-template-columns:1fr;gap:24px}.lgR{border-left:0;border-top:2px solid var(--dv);padding-left:0;padding-top:24px}}
+  
+  /* ===== ファイル選択ボタン / 切り抜き / 入室画面を中央配置 ===== */
+  .fbtn{margin:0;color:var(--pri);font-size:15px;cursor:pointer}
+  .fbtn:focus-within{outline:1px solid var(--pri);box-shadow:0 0 0 4px color-mix(in srgb,var(--pri) 35%,transparent)}
+  .cv{width:240px;height:240px;max-width:100%;align-self:center;border-radius:12px;background:#000;touch-action:none;cursor:grab}
+  input[type=range]{border:0;padding:0;background:transparent;accent-color:var(--pri);min-height:32px}
+  #login{min-height:100vh;min-height:100dvh;margin:0 auto;max-width:none;width:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 16px}
+  #login>*{width:min(900px,100%)}
+  .c-black{--ac:#1D1D1F}
+  .pv{background:var(--surf);border-radius:12px;padding:12px;margin-top:4px}
+  
+  
+  /* ===== 表示モード切り替え / 入室画面のボタンを小さく ===== */
+  :root[data-theme="light"]{color-scheme:light}
+  .dot{color:var(--onpri)}
+  .seg{display:inline-flex;background:var(--surf);border-radius:10px;padding:3px;gap:2px}
+  .seg button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--mu);font-weight:600;font-size:14px;cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--card);color:var(--tx);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  #login>.thm{position:fixed;top:16px;right:16px;width:auto;z-index:5}
+  @media(max-width:760px){.seg button span{display:none}.seg button{padding:0 10px}}
+  .lg .btn{align-self:flex-start}
+  .lg .btn,.fbtn{min-height:36px;padding:4px 14px;font-size:14px}
+  
+  /* ===== 参加メンバー ===== */
+  .mem{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px 0 8px;border:2px solid var(--dv);border-radius:99px;background:var(--card);cursor:pointer;font-size:14px;color:var(--tx)}
+  .mem:hover{background:var(--surf)}.mem b{font-size:15px}
+  .stack{display:inline-flex}
+  .stack .av{width:26px;height:26px;margin-left:-8px;border:2px solid var(--card)}
+  .stack .av:first-child{margin-left:0}.stack .av svg{width:14px;height:14px}
+  .mlist{display:flex;flex-direction:column;margin:8px 0 16px;max-height:50vh;overflow-y:auto}
+  .mrow{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--dv)}
+  .mrow .mrole{margin-left:auto;color:var(--mu);font-size:13px}
+  
+  /* ===== Apple風トグル（ライト / ダーク）===== */
+  .thm{display:inline-flex;align-items:center;gap:8px;color:var(--mu)}
+  .ti{display:inline-flex}.ti svg{width:18px;height:18px}
+  .thm[data-mode="light"] .i-sun,.thm[data-mode="dark"] .i-moon{color:var(--tx)}
+  .sw2{position:relative;flex:none;width:51px;height:31px;border:0;border-radius:99px;background:#8E8E93;padding:0;cursor:pointer;transition:background .25s}
+  .sw2 .knob{position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.3);transition:transform .25s cubic-bezier(.3,.7,.4,1),width .2s}
+  .sw2[aria-checked="true"]{background:var(--pri)}
+  .sw2[aria-checked="true"] .knob{transform:translateX(20px)}
+  .sw2:active .knob{width:33px}
+  .sw2[aria-checked="true"]:active .knob{transform:translateX(14px)}
+  @media(prefers-reduced-motion:reduce){.sw2,.sw2 .knob{transition:none}}
+  
+  /* ===== トグルをヘッダーの他の部品になじませる ===== */
+  .thm{height:36px;padding:0 12px;gap:8px;background:var(--card);border:2px solid var(--dv);border-radius:99px}
+  .ti svg{width:16px;height:16px}
+  .sw2{width:44px;height:26px}
+  .sw2 .knob{width:22px;height:22px}
+  .sw2[aria-checked="true"] .knob{transform:translateX(18px)}
+  .sw2:active .knob{width:28px}
+  .sw2[aria-checked="true"]:active .knob{transform:translateX(12px)}
+  
+  /* ===== テーマ切り替えアニメーション ===== */
+  ::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+  ::view-transition-old(root){z-index:1}
+  ::view-transition-new(root){z-index:2}
+  html.tfade *{transition:background-color .3s,color .3s,border-color .3s,box-shadow .3s!important}
+  .ti{opacity:.45;transform:rotate(-90deg) scale(.8);transition:transform .5s cubic-bezier(.3,.7,.4,1),opacity .3s}
+  .thm[data-mode="light"] .i-sun,.thm[data-mode="dark"] .i-moon{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){.ti{transition:none}}
+  
+  /* ===== 洗練: 入場・押下・切り替えの動き ===== */
+  :root{--ease:cubic-bezier(.2,.8,.2,1)}
+  .btn,.tb,.go,.mem,.acc,nav button,.ig button,.sw button,.thm{transition:background-color .15s,border-color .15s,color .15s,box-shadow .15s,transform .15s var(--ease)}
+  input,textarea{transition:border-color .15s,box-shadow .15s}
+  .msgrow{transition:background-color .15s}
+  .msgrow:not(.sel):hover{background:var(--surf)}
+  .msgrow.fresh,.todo.fresh{animation:rise .35s var(--ease)}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}}
+  dialog[open]{animation:dpop .25s var(--ease)}
+  dialog[open]::backdrop{animation:bfade .25s ease-out}
+  @keyframes dpop{from{opacity:0;transform:scale(.96) translateY(8px)}}
+  @keyframes bfade{from{opacity:0}}
+  #toast{animation:rise .3s var(--ease)}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+  
+  /* ===== ワークシート・リアクション・論点パネル ===== */
+  .ws h2{margin:0 0 8px}
+  .wi{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--dv)}
+  .wt{flex:1;white-space:pre-wrap;overflow-wrap:anywhere}
+  .wq{display:flex;gap:6px;align-items:center;color:var(--mu);font-size:13px;margin-top:2px;white-space:normal}
+  .wq svg{width:14px;height:14px;flex:none}
+  .wm{display:flex;align-items:center;gap:2px;color:var(--mu);font-size:13px;flex-wrap:wrap;justify-content:flex-end}
+  .rxbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .rx{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border:2px solid var(--dv);border-radius:99px;background:var(--card);color:var(--tx);cursor:pointer;font-size:13px}
+  .rx svg{width:14px;height:14px}
+  .rx.on{border-color:var(--pri);background:var(--me)}
+  .rx.add{padding:0 8px;color:var(--mu)}
+  .acts{display:flex;gap:4px;flex-wrap:wrap}
+  .acts .tb{padding:0 8px 0 0}
+  .rxgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+  .rxo{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 12px;border:2px solid var(--dv);border-radius:8px;background:var(--card);cursor:pointer;color:var(--tx);text-align:left}
+  .rxo:hover{background:var(--surf)}
+  .issues h2{display:flex;align-items:center;gap:6px}
+  .is{padding:8px 0;border-bottom:1px solid var(--dv)}
+  .is-st{margin-top:6px;height:32px}
+  .isr{font-size:13px;color:var(--mu)}
+  .is-done .is-st{color:light-dark(#00A651,#34D07A);border-color:light-dark(#00A651,#34D07A)}
+  .is-hold .is-st{color:var(--mu);border-color:var(--bd)}
+  .hr{border:0;border-top:2px solid var(--dv);margin:12px 0}
+  dialog ul{margin:4px 0;padding-left:20px}
+  
+  /* ===== ワークシートの開閉 / 論点を1つずつ表示 ===== */
+  .wsh{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;border:0;background:none;cursor:pointer;color:var(--tx);font-size:17px;font-weight:700;text-align:left;padding:0;border-radius:8px}
+  .wsh>span:first-child{flex:1}
+  .wsn{font-size:13px;font-weight:400;color:var(--mu)}
+  .wsh svg{transition:transform .2s}
+  .wsh[aria-expanded="false"] svg{transform:rotate(-90deg)}
+  .wsb{margin-top:8px}
+  .ws .wsh{margin:0}
